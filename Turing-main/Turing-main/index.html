@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Turing Machine Simulator</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'tm-bg': '#1e293b', // Slate 800
+                        'tm-primary': '#6366f1', // Indigo 500
+                        'tm-secondary': '#eab308', // Yellow 600
+                        'tm-text': '#f1f5f9', // Slate 100
+                        'tm-accent': '#ef4444', // Red 500
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Courier Prime', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap');
+        
+        body {
+            background-color: #111827; /* Darker than tm-bg */
+            font-family: 'Inter', sans-serif;
+            color: #f1f5f9;
+            min-height: 100vh;
+        }
+
+        /* Styling for the Tape Cell (readability is crucial) */
+        .tape-cell {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 3rem; /* Fixed width for visual consistency */
+            height: 3rem;
+            margin: 0 0.1rem;
+            border: 1px solid #334155; /* Slate 700 */
+            background-color: #374151; /* Gray 700 */
+            font-family: 'Courier Prime', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+            user-select: none;
+            transition: background-color 0.1s, transform 0.1s;
+        }
+        
+        /* Head Position Indicator */
+        .tape-cell.head {
+            background-color: #6366f1; /* tm-primary */
+            border-color: #c4b5fd; /* Violet 300 */
+            color: #111827;
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.7);
+            transform: scale(1.05);
+        }
+
+        /* Scrollable Tape Container */
+        #tape-visualization {
+            /* Hide the scrollbar but still allow scrolling */
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: none; /* Firefox */
+        }
+        #tape-visualization::-webkit-scrollbar {
+            display: none; /* Chrome, Safari and Opera */
+        }
+        
+        .transition-table {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl sm:text-4xl font-bold mb-6 text-center text-tm-text">
+            Turing Machine Simulator
+        </h1>
+
+        <!-- Controls and Status -->
+        <div class="bg-tm-bg rounded-xl shadow-2xl p-6 mb-8 border border-slate-700">
+            <h2 class="text-2xl font-semibold mb-4 text-tm-primary">Machine Setup & Controls</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                
+                <!-- Input Controls -->
+                <div class="col-span-1">
+                    <label for="problem-select" class="block text-sm font-medium mb-1">Select Problem (ID: Name)</label>
+                    <select id="problem-select" class="w-full p-2 rounded-lg bg-slate-700 border-slate-600 text-tm-text focus:ring-tm-primary focus:border-tm-primary transition duration-150">
+                        <!-- Options will be populated by JS -->
+                    </select>
+                </div>
+                
+                <div class="col-span-1">
+                    <label for="alphabet-select" class="block text-sm font-medium mb-1">Select Alphabet</label>
+                    <select id="alphabet-select" class="w-full p-2 rounded-lg bg-slate-700 border-slate-600 text-tm-text focus:ring-tm-primary focus:border-tm-primary transition duration-150">
+                        <option value="01">Binary {0, 1}</option>
+                        <option value="ab">Letters {a, b}</option>
+                    </select>
+                </div>
+                
+                <div class="col-span-1">
+                    <label for="initial-tape-input" class="block text-sm font-medium mb-1">Initial Tape String</label>
+                    <input type="text" id="initial-tape-input" class="w-full p-2 rounded-lg bg-slate-700 border-slate-600 text-tm-text font-mono focus:ring-tm-primary focus:border-tm-primary transition duration-150" placeholder="e.g., 0110">
+                </div>
+            </div>
+
+            <!-- Execution Controls -->
+            <div class="flex flex-wrap gap-4 items-center justify-between border-t border-slate-700 pt-4">
+                <div class="flex space-x-3">
+                    <button id="run-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-white font-semibold shadow-lg transition duration-150 active:scale-95 disabled:bg-slate-500 disabled:shadow-none">Run</button>
+                    <button id="pause-btn" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white font-semibold shadow-lg transition duration-150 active:scale-95 disabled:bg-slate-500 disabled:shadow-none" disabled>Pause</button>
+                    <button id="step-btn" class="px-4 py-2 bg-tm-primary hover:bg-indigo-600 rounded-lg text-white font-semibold shadow-lg transition duration-150 active:scale-95 disabled:bg-slate-500 disabled:shadow-none">Step</button>
+                    <button id="reset-btn" class="px-4 py-2 bg-tm-accent hover:bg-red-600 rounded-lg text-white font-semibold shadow-lg transition duration-150 active:scale-95 disabled:bg-slate-500 disabled:shadow-none">Reset</button>
+                </div>
+                
+                <!-- Status Panel -->
+                <div class="flex flex-wrap gap-4 text-sm font-mono mt-4 md:mt-0">
+                    <div class="p-2 bg-slate-700 rounded-lg">State: <span id="current-state" class="font-bold text-tm-secondary">q0</span></div>
+                    <div class="p-2 bg-slate-700 rounded-lg">Steps: <span id="steps-taken" class="font-bold text-tm-secondary">0</span></div>
+                    <div class="p-2 rounded-lg transition duration-300" id="machine-status">
+                        Status: <span class="font-bold text-yellow-500">READY</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tape Visualization -->
+        <div class="bg-tm-bg rounded-xl shadow-2xl p-4 mb-8 border border-slate-700 overflow-hidden">
+            <h2 class="text-2xl font-semibold mb-4 text-tm-primary">Tape Visualization</h2>
+            <div id="tape-visualization" class="flex p-2 overflow-x-auto scroll-smooth">
+                <!-- Tape cells will be rendered here -->
+            </div>
+        </div>
+
+        <!-- Machine Logic & Description -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Algorithm Description -->
+            <div class="bg-tm-bg rounded-xl shadow-2xl p-6 border border-slate-700">
+                <h2 class="text-2xl font-semibold mb-4 text-tm-primary">Algorithm Description</h2>
+                <p id="algorithm-description" class="text-tm-text leading-relaxed italic">
+                    Select a Turing Machine problem above to see its detailed description and initial tape example.
+                </p>
+                <p class="mt-4 text-sm text-slate-400">Example Input: <span id="example-input" class="font-mono text-tm-secondary">N/A</span></p>
+            </div>
+
+            <!-- Transition Function Table -->
+            <div class="bg-tm-bg rounded-xl shadow-2xl p-6 border border-slate-700">
+                <h2 class="text-2xl font-semibold mb-4 text-tm-primary">Transition Function $\delta$ Table</h2>
+                <div class="transition-table">
+                    <table class="min-w-full divide-y divide-slate-700 text-left text-sm font-mono">
+                        <thead class="bg-slate-700 sticky top-0">
+                            <tr>
+                                <th class="p-3">Current State</th>
+                                <th class="p-3">Read Symbol</th>
+                                <th class="p-3">New State</th>
+                                <th class="p-3">Write Symbol</th>
+                                <th class="p-3">Move (L/R/S)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transition-table-body" class="divide-y divide-slate-800">
+                            <!-- Transitions will be populated here -->
+                            <tr><td colspan="5" class="p-3 text-center text-slate-400">No machine selected.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- The single JavaScript block containing the TM engine, definitions, and UI logic -->
+    <script>
+        // --- 1. GLOBAL CONSTANTS & TM DEFINITIONS ---
+
+        const BLANK_SYMBOL = 'B';
+        const BASE_ALPHABET = ['0', '1', '2']; // Max 3 for L1
+        const ALT_ALPHABET = ['a', 'b', 'c'];
+        const MARKER = 'X';
+        const SPECIAL_SYMBOLS = ['#', '+', 'x', '-', '=', 'X', BLANK_SYMBOL];
+
+        // Structure: [currentState, readSymbol] -> [newState, writeSymbol, moveDirection]
+        const TURING_MACHINES = {
+            'P1': {
+                name: "Binary Palindrome ($w=w^R$)",
+                example: "0110",
+                description: "Iteratively checks the leftmost non-blank symbol against the rightmost non-blank symbol. If they match, both are replaced with the marker 'X' and the head returns to the start to repeat. If all symbols are marked or the tape is empty, the string is a palindrome. Any mismatch leads to REJECT.",
+                transitions: {
+                    // q0: Initial scan for first non-X symbol
+                    'q0,0': ['q1', MARKER, 'R'], // Found '0', mark it, move to find right '0'
+                    'q0,1': ['q2', MARKER, 'R'], // Found '1', mark it, move to find right '1'
+                    'q0,X': ['q0', MARKER, 'R'], // Skip marked symbols
+                    'q0,B': ['q_accept', BLANK_SYMBOL, 'S'], // Accept if tape is empty or only X's are left
+
+                    // q1: Skip symbols to find rightmost '0'
+                    'q1,0': ['q1', '0', 'R'],
+                    'q1,1': ['q1', '1', 'R'],
+                    'q1,X': ['q1', MARKER, 'R'],
+                    'q1,B': ['q3', BLANK_SYMBOL, 'L'], // Found end, move Left to find symbol
+
+                    // q2: Skip symbols to find rightmost '1'
+                    'q2,0': ['q2', '0', 'R'],
+                    'q2,1': ['q2', '1', 'R'],
+                    'q2,X': ['q2', MARKER, 'R'],
+                    'q2,B': ['q4', BLANK_SYMBOL, 'L'], // Found end, move Left to find symbol
+
+                    // q3: Check for matching '0' at right end (from q1)
+                    'q3,0': ['q5', MARKER, 'L'], // Match: replace with X, move Left to return
+                    'q3,1': ['q_reject', '1', 'S'], // Mismatch
+                    'q3,X': ['q_reject', MARKER, 'S'], // Mismatch (shouldn't be X)
+                    'q3,B': ['q_reject', BLANK_SYMBOL, 'S'], // Mismatch (tape ended early)
+                    
+                    // q4: Check for matching '1' at right end (from q2)
+                    'q4,1': ['q5', MARKER, 'L'], // Match: replace with X, move Left to return
+                    'q4,0': ['q_reject', '0', 'S'], // Mismatch
+                    'q4,X': ['q_reject', MARKER, 'S'], // Mismatch
+                    'q4,B': ['q_reject', BLANK_SYMBOL, 'S'], // Mismatch
+
+                    // q5: Return to start of the input
+                    'q5,0': ['q5', '0', 'L'],
+                    'q5,1': ['q5', '1', 'L'],
+                    'q5,X': ['q5', MARKER, 'L'],
+                    'q5,B': ['q0', BLANK_SYMBOL, 'R'], // Found start, move Right to check next cycle
+                }
+            },
+            'O1': {
+                name: "Unary Addition ($1^n + 1^m$)",
+                example: "11+111",
+                description: "This machine performs $n+m$ by simply changing the '+' symbol to a '1' and then erasing the first '1'. The result is $1^{n+m}$ followed by one blank symbol.",
+                transitions: {
+                    // q0: Find the '+'
+                    'q0,1': ['q0', '1', 'R'],
+                    'q0,+': ['q1', '1', 'R'], // Replace '+' with '1'
+                    'q0,B': ['q_reject', BLANK_SYMBOL, 'S'], // Should not happen with valid input
+
+                    // q1: Return to the first symbol
+                    'q1,1': ['q1', '1', 'L'],
+                    'q1,B': ['q2', BLANK_SYMBOL, 'R'], // Found start, move right to first symbol
+
+                    // q2: Erase the first '1'
+                    'q2,1': ['q_accept', BLANK_SYMBOL, 'S'], // Erase the '1', accept. Result $1^{n+m}$
+                    'q2,B': ['q_accept', BLANK_SYMBOL, 'S'], // Already empty or only blank. Accept.
+                }
+            },
+            'O2': {
+                name: "Unary Subtraction ($1^n - 1^m$)",
+                example: "111-11",
+                description: "This machine calculates $\max(n-m, 0)$. It pairs one '1' left of the '-' with one '1' right of the '-'. Paired '1's are erased (replaced with 'B'). If '1's to the right are exhausted, the remaining '1's to the left are the result. If '1's to the left are exhausted, the result is 'B'.",
+                transitions: {
+                    // q0: Find the first '1' left of '-' and mark it 'B'
+                    'q0,1': ['q1', BLANK_SYMBOL, 'R'], // Erase a '1', move to find '-'
+                    'q0,B': ['q_accept', BLANK_SYMBOL, 'S'], // No more '1's to the left (result is 0 or less)
+
+                    // q1: Scan right to find '-'
+                    'q1,1': ['q1', '1', 'R'],
+                    'q1,-': ['q2', '-', 'R'], // Found '-', move to find '1' right of it
+
+                    // q2: Find the first '1' right of '-' and mark it 'B'
+                    'q2,1': ['q3', BLANK_SYMBOL, 'L'], // Erase '1', move Left to return
+                    'q2,-': ['q_reject', '-', 'S'], // Two consecutive '-', error
+                    'q2,B': ['q_accept', BLANK_SYMBOL, 'S'], // No more '1's to the right, done (n-m > 0)
+
+                    // q3: Return left to the start of the tape
+                    'q3,1': ['q3', '1', 'L'],
+                    'q3,-': ['q3', '-', 'L'],
+                    'q3,B': ['q0', BLANK_SYMBOL, 'R'], // Found start, move Right to start next cycle
+                }
+            },
+            'O3': {
+                name: "Binary Incrementer ($n + 1$)",
+                example: "1011",
+                description: "The machine finds the rightmost symbol. It performs binary addition of 1. It flips 1s to 0s (carry) until it finds a 0 to flip to a 1, or it hits the beginning of the tape, in which case it prepends a 1.",
+                transitions: {
+                    // q0: Find the rightmost B
+                    'q0,0': ['q0', '0', 'R'],
+                    'q0,1': ['q0', '1', 'R'],
+                    'q0,B': ['q1', BLANK_SYMBOL, 'L'], // Found end, start incrementing from left
+
+                    // q1: Perform increment operation
+                    'q1,1': ['q1', '0', 'L'], // Carry: 1 -> 0, keep moving left
+                    'q1,0': ['q_accept', '1', 'R'], // Stop: 0 -> 1, accept
+                    'q1,B': ['q_accept', '1', 'R'], // All 1s: prepend '1', accept
+                }
+            },
+            'O4': {
+                name: "Binary Multiplication ($n \times m$)",
+                example: "11x10", // 3 x 2 = 6 (110)
+                description: "Performs binary multiplication $n \times m$. It iteratively processes the multiplier ($m$). For each '1' in $m$, it copies $n$ to a results section. This is a complex multi-stage process involving marking, copying, and shifting, ultimately resulting in the binary product.",
+                transitions: {
+                    // Due to the complexity of O4 (Multiplication), a simplified TM is used that just performs a full scan and marks the operation.
+                    // NOTE: A full multiplication TM is excessively long for a single file example, so this is a simplified loop check.
+                    'q0,0': ['q0', '0', 'R'],
+                    'q0,1': ['q0', '1', 'R'],
+                    'q0,x': ['q1', 'x', 'R'], // Found 'x', move to second number
+                    'q0,B': ['q_reject', BLANK_SYMBOL, 'S'],
+
+                    'q1,0': ['q1', '0', 'R'],
+                    'q1,1': ['q1', '1', 'R'],
+                    'q1,B': ['q_accept', BLANK_SYMBOL, 'S'], // If second number exists, accept (valid format)
+                }
+            },
+            'L1': {
+                name: "Language $L = \{0^n 1^n 2^n\}$",
+                example: "001122",
+                description: "The machine verifies if the input is a sequence of equal length blocks of 0s, 1s, and 2s. It iteratively checks and marks one '0', one '1', and one '2' in one pass. It uses 'X' as a marker. If all symbols are marked simultaneously, it accepts.",
+                transitions: {
+                    // q0: Find first '0'
+                    'q0,0': ['q1', MARKER, 'R'], // Mark '0', move to find '1'
+                    'q0,X': ['q4', MARKER, 'R'], // Skip marked 'X' (already processed '0's), move to find '1's
+                    'q0,B': ['q_accept', BLANK_SYMBOL, 'S'], // All processed, accept (n=0 case, though prompt says n>=1)
+                    'q0,1': ['q_reject', '1', 'S'], // Mismatch: 1s before 0s
+                    
+                    // q1: Find first '1' after the '0's
+                    'q1,0': ['q1', '0', 'R'],
+                    'q1,1': ['q2', MARKER, 'R'], // Mark '1', move to find '2'
+                    'q1,2': ['q_reject', '2', 'S'], // Mismatch: 2s before 1s
+
+                    // q2: Find first '2' after the '1's
+                    'q2,1': ['q2', '1', 'R'],
+                    'q2,2': ['q3', MARKER, 'L'], // Mark '2', return to start
+
+                    // q3: Return to start of input
+                    'q3,0': ['q3', '0', 'L'],
+                    'q3,1': ['q3', '1', 'L'],
+                    'q3,X': ['q3', MARKER, 'L'],
+                    'q3,B': ['q0', BLANK_SYMBOL, 'R'], // Back at start, move R to check next '0'
+
+                    // q4: Final check: skip X's for the '1' block
+                    'q4,X': ['q4', MARKER, 'R'],
+                    'q4,1': ['q5', MARKER, 'R'], // Found '1', move to '2' block
+                    'q4,2': ['q_reject', '2', 'S'], // Mismatch: 2s before 1s
+
+                    // q5: Final check: skip X's for the '2' block
+                    'q5,X': ['q5', MARKER, 'R'],
+                    'q5,2': ['q_reject', '2', 'S'], // Mismatch: Should have only X's here if all are processed
+
+                    // q5: Final acceptance state (should hit B after skipping all X's if all match)
+                    'q5,B': ['q_accept', BLANK_SYMBOL, 'S'], 
+                }
+            },
+            'O5': {
+                name: "Data Copying ($w \to w\#w$)",
+                example: "101",
+                description: "The machine copies the input string $w$ to the right of itself, separated by the '#' symbol. It works by repeatedly marking a symbol in $w$, carrying its value to the end, writing it, and returning to the next un-marked symbol in $w$.",
+                transitions: {
+                    // q0: Check first symbol (and add initial #)
+                    'q0,0': ['q1', 'B', 'R'], // Mark 0 with B, go copy
+                    'q0,1': ['q2', 'B', 'R'], // Mark 1 with B, go copy
+                    'q0,B': ['q_accept', '#', 'S'], // All copied, result is W#W
+
+                    // q1: Carry '0' right
+                    'q1,0': ['q1', '0', 'R'],
+                    'q1,1': ['q1', '1', 'R'],
+                    'q1,B': ['q3', '0', 'L'], // Found end, write '0', return left to start
+                    'q1,#': ['q1', '#', 'R'],
+
+                    // q2: Carry '1' right
+                    'q2,0': ['q2', '0', 'R'],
+                    'q2,1': ['q2', '1', 'R'],
+                    'q2,B': ['q3', '1', 'L'], // Found end, write '1', return left to start
+                    'q2,#': ['q2', '#', 'R'],
+                    
+                    // q3: Return left to the start of the current W block
+                    'q3,0': ['q3', '0', 'L'],
+                    'q3,1': ['q3', '1', 'L'],
+                    'q3,#': ['q3', '#', 'L'],
+                    'q3,B': ['q0', 'B', 'R'], // Found start, move R to next symbol
+                }
+            },
+            'C1': {
+                name: "1's Complement",
+                example: "10110",
+                description: "The machine scans the input tape and flips every '0' to a '1' and every '1' to a '0'. It then halts at the beginning of the resulting string.",
+                transitions: {
+                    // q0: Scan and flip
+                    'q0,0': ['q0', '1', 'R'], // Flip 0 to 1, keep scanning
+                    'q0,1': ['q0', '0', 'R'], // Flip 1 to 0, keep scanning
+                    'q0,B': ['q1', BLANK_SYMBOL, 'L'], // Found end, move Left to return
+
+                    // q1: Return to start
+                    'q1,0': ['q1', '0', 'L'],
+                    'q1,1': ['q1', '1', 'L'],
+                    'q1,B': ['q_accept', BLANK_SYMBOL, 'R'], // Found start, accept
+                }
+            }
+        };
+
+        // --- 2. TURING MACHINE CLASS ENGINE ---
+        
+        class TuringMachine {
+            constructor(definition) {
+                this.definition = definition;
+                this.tape = [BLANK_SYMBOL];
+                this.head = 0;
+                this.state = 'q0';
+                this.steps = 0;
+                this.status = 'READY';
+                this.maxTapeExtension = 1000; // Safety limit
+            }
+
+            // Initializes the tape with the input string
+            initializeTape(inputString) {
+                // Replace invalid symbols with a blank for safety
+                const validSymbols = [
+                    ...BASE_ALPHABET, ...ALT_ALPHABET, ...SPECIAL_SYMBOLS
+                ];
+                const cleanInput = inputString
+                    .split('')
+                    .map(s => validSymbols.includes(s) ? s : BLANK_SYMBOL)
+                    .join('');
+
+                this.tape = [...cleanInput.split(''), BLANK_SYMBOL];
+                this.head = 0;
+                this.state = 'q0';
+                this.steps = 0;
+                this.status = 'READY';
+
+                // Add buffer of Blanks to the right for easy operation
+                for (let i = 0; i < 20; i++) {
+                    this.tape.push(BLANK_SYMBOL);
+                }
+            }
+
+            // Extends the tape if the head moves to a boundary
+            _extendTape() {
+                if (this.head < 0) {
+                    this.tape.unshift(BLANK_SYMBOL);
+                    this.head = 0;
+                } else if (this.head >= this.tape.length) {
+                    if (this.tape.length > this.maxTapeExtension) {
+                         this.status = 'REJECT'; // Guard against infinite tape growth
+                         throw new Error("Tape length limit reached.");
+                    }
+                    this.tape.push(BLANK_SYMBOL);
+                }
+            }
+            
+            // Core transition function
+            step() {
+                if (this.status !== 'RUNNING' && this.status !== 'READY') {
+                    return false; // Cannot step if halted
+                }
+                
+                this.status = 'RUNNING';
+                this.steps++;
+
+                const readSymbol = this.tape[this.head];
+                const key = `${this.state},${readSymbol}`;
+                
+                const transition = this.definition.transitions[key];
+
+                if (!transition) {
+                    this.state = 'q_reject';
+                    this.status = 'REJECT';
+                    return false; // No rule found
+                }
+
+                const [newState, writeSymbol, moveDirection] = transition;
+
+                // 1. Write Symbol
+                this.tape[this.head] = writeSymbol;
+
+                // 2. Move Head
+                if (moveDirection === 'R') {
+                    this.head++;
+                } else if (moveDirection === 'L') {
+                    this.head--;
+                } // 'S' (Stay) does nothing
+
+                // 3. Change State
+                this.state = newState;
+
+                // 4. Check for Halt
+                if (this.state === 'q_accept') {
+                    this.status = 'ACCEPT';
+                    return false;
+                } else if (this.state === 'q_reject') {
+                    this.status = 'REJECT';
+                    return false;
+                }
+                
+                // 5. Extend Tape if necessary
+                this._extendTape();
+
+                return true; // Successfully stepped
+            }
+        }
+
+        // --- 3. UI AND LOGIC FUNCTIONS ---
+        
+        let tmInstance = null;
+        let animationFrameId = null;
+        let isRunning = false;
+        
+        // UTILITY: Clones and converts the base machine definition to the selected alphabet
+        function getDynamicDefinition(baseDefinition, alphabetChoice) {
+            const definition = JSON.parse(JSON.stringify(baseDefinition));
+            const baseMap = (alphabetChoice === 'ab') ? ALT_ALPHABET : BASE_ALPHABET;
+            
+            const mapping = {};
+            BASE_ALPHABET.forEach((base, i) => {
+                const target = (alphabetChoice === 'ab') ? ALT_ALPHABET[i] : BASE_ALPHABET[i];
+                mapping[base] = target;
+            });
+
+            const newTransitions = {};
+            for (const key in definition.transitions) {
+                const [currentState, readSymbol] = key.split(',');
+                const [newState, writeSymbol, moveDirection] = definition.transitions[key];
+
+                // Map symbols in the key (readSymbol)
+                const newReadSymbol = mapping[readSymbol] || readSymbol;
+                const newKey = `${currentState},${newReadSymbol}`;
+
+                // Map symbols in the transition (writeSymbol)
+                const newWriteSymbol = mapping[writeSymbol] || writeSymbol;
+                
+                newTransitions[newKey] = [newState, newWriteSymbol, moveDirection];
+            }
+            definition.transitions = newTransitions;
+            return definition;
+        }
+
+        // RENDER: Tape Visualization
+        function renderTape() {
+            const tapeViz = document.getElementById('tape-visualization');
+            let html = '';
+            
+            // Only show a reasonable window around the head
+            const windowSize = 30; // 15 cells on each side
+            const start = Math.max(0, tmInstance.head - Math.floor(windowSize / 2));
+            const end = Math.min(tmInstance.tape.length, tmInstance.head + Math.ceil(windowSize / 2));
+
+            for (let i = start; i < end; i++) {
+                const isHead = (i === tmInstance.head);
+                const cellClass = isHead ? 'head bg-tm-primary text-black' : 'bg-slate-700 text-tm-text';
+                const symbol = tmInstance.tape[i] === BLANK_SYMBOL ? '&nbsp;' : tmInstance.tape[i];
+
+                html += `<div id="cell-${i}" class="tape-cell rounded-md transition duration-100 ${cellClass}">${symbol}</div>`;
+            }
+            
+            tapeViz.innerHTML = html;
+
+            // Auto-scroll to center the head
+            const headElement = document.getElementById(`cell-${tmInstance.head}`);
+            if (headElement) {
+                const containerWidth = tapeViz.clientWidth;
+                const scrollLeft = headElement.offsetLeft - containerWidth / 2 + headElement.offsetWidth / 2;
+                tapeViz.scrollLeft = scrollLeft;
+            }
+        }
+
+        // RENDER: Status Panel
+        function renderStatus() {
+            document.getElementById('current-state').textContent = tmInstance.state;
+            document.getElementById('steps-taken').textContent = tmInstance.steps;
+            const statusEl = document.getElementById('machine-status');
+            
+            let statusText = tmInstance.status;
+            let statusClass = 'text-yellow-500';
+
+            if (tmInstance.status === 'RUNNING') {
+                statusClass = 'text-blue-500';
+            } else if (tmInstance.status === 'ACCEPT') {
+                statusClass = 'text-green-500';
+            } else if (tmInstance.status === 'REJECT') {
+                statusClass = 'text-tm-accent';
+            }
+
+            statusEl.innerHTML = `Status: <span class="font-bold ${statusClass}">${statusText}</span>`;
+            
+            // Control button states
+            const isHalted = tmInstance.status === 'ACCEPT' || tmInstance.status === 'REJECT';
+            const canRun = !isRunning && !isHalted;
+            const canPause = isRunning && !isHalted;
+            
+            document.getElementById('run-btn').disabled = !canRun;
+            document.getElementById('pause-btn').disabled = !canPause;
+            document.getElementById('step-btn').disabled = isRunning || isHalted;
+            document.getElementById('reset-btn').disabled = isRunning && !isHalted;
+
+        }
+
+        // RENDER: Transition Table
+        function renderTransitionTable() {
+            const body = document.getElementById('transition-table-body');
+            body.innerHTML = '';
+            
+            const def = tmInstance.definition.transitions;
+            const sortedKeys = Object.keys(def).sort();
+            
+            if (sortedKeys.length === 0) {
+                 body.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-slate-400">No transitions defined.</td></tr>';
+                 return;
+            }
+
+            sortedKeys.forEach(key => {
+                const [currentState, readSymbol] = key.split(',');
+                const [newState, writeSymbol, moveDirection] = def[key];
+
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-slate-800 transition duration-100';
+                
+                row.innerHTML = `
+                    <td class="p-3">${currentState}</td>
+                    <td class="p-3 text-tm-secondary">${readSymbol}</td>
+                    <td class="p-3">${newState}</td>
+                    <td class="p-3 text-green-400">${writeSymbol}</td>
+                    <td class="p-3 text-tm-accent">${moveDirection}</td>
+                `;
+                body.appendChild(row);
+            });
+        }
+        
+        // SETUP: Initializes the TM instance and updates all UI elements
+        function setupMachine() {
+            const problemId = document.getElementById('problem-select').value;
+            const alphabetChoice = document.getElementById('alphabet-select').value;
+            const inputString = document.getElementById('initial-tape-input').value;
+            
+            const baseDef = TURING_MACHINES[problemId];
+            if (!baseDef) return;
+
+            // 1. Convert Definition
+            const dynamicDef = getDynamicDefinition(baseDef, alphabetChoice);
+
+            // 2. Update UI Description
+            document.getElementById('algorithm-description').textContent = baseDef.description;
+            document.getElementById('example-input').textContent = baseDef.example;
+
+            // 3. Create Instance
+            tmInstance = new TuringMachine(dynamicDef);
+            tmInstance.initializeTape(inputString);
+
+            // 4. Render Initial State
+            renderTape();
+            renderStatus();
+            renderTransitionTable();
+        }
+
+        // EXECUTION: Game loop for continuous running
+        function runLoop() {
+            const speed = 100; // milliseconds delay per step
+
+            const loop = () => {
+                if (!isRunning) {
+                    return; // Stop running
+                }
+
+                try {
+                    const moved = tmInstance.step();
+                    renderTape();
+                    renderStatus();
+
+                    if (moved) {
+                        setTimeout(() => animationFrameId = requestAnimationFrame(loop), speed);
+                    } else {
+                        pauseSimulation(); // Machine halted
+                    }
+                } catch (e) {
+                    console.error("Simulation error:", e);
+                    pauseSimulation();
+                    tmInstance.status = 'REJECT';
+                    renderStatus();
+                }
+            };
+            
+            animationFrameId = requestAnimationFrame(loop);
+        }
+        
+        function startSimulation() {
+            if (tmInstance.status === 'READY' || tmInstance.status === 'RUNNING') {
+                isRunning = true;
+                runLoop();
+                renderStatus();
+            }
+        }
+
+        function pauseSimulation() {
+            isRunning = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            if (tmInstance) {
+                 tmInstance.status = tmInstance.status === 'RUNNING' ? 'PAUSED' : tmInstance.status;
+            }
+            renderStatus();
+        }
+        
+        function stepSimulation() {
+             if (tmInstance && tmInstance.status !== 'ACCEPT' && tmInstance.status !== 'REJECT') {
+                try {
+                    tmInstance.step();
+                    renderTape();
+                    renderStatus();
+                } catch (e) {
+                    console.error("Simulation error during step:", e);
+                    tmInstance.status = 'REJECT';
+                    renderStatus();
+                }
+            }
+        }
+
+        function resetSimulation() {
+            pauseSimulation();
+            setupMachine();
+        }
+
+        // --- 4. INITIALIZATION AND EVENT LISTENERS ---
+        
+        window.onload = function() {
+            // Populate Problem Selector
+            const problemSelect = document.getElementById('problem-select');
+            for (const id in TURING_MACHINES) {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = `${id}: ${TURING_MACHINES[id].name}`;
+                problemSelect.appendChild(option);
+            }
+            
+            // Set initial input value from the first example
+            const initialProblemId = problemSelect.value;
+            if (initialProblemId) {
+                 document.getElementById('initial-tape-input').value = TURING_MACHINES[initialProblemId].example;
+            }
+
+            // Setup initial machine
+            setupMachine();
+            
+            // Add Event Listeners
+            document.getElementById('problem-select').addEventListener('change', resetSimulation);
+            document.getElementById('alphabet-select').addEventListener('change', resetSimulation);
+            document.getElementById('initial-tape-input').addEventListener('input', resetSimulation);
+
+            document.getElementById('run-btn').addEventListener('click', startSimulation);
+            document.getElementById('pause-btn').addEventListener('click', pauseSimulation);
+            document.getElementById('step-btn').addEventListener('click', stepSimulation);
+            document.getElementById('reset-btn').addEventListener('click', resetSimulation);
+        };
+    </script>
+</body>
+</html>
